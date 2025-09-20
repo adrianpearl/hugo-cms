@@ -119,6 +119,10 @@ hugo-cms/
 4. **Update Netlify DNS:**
    - Add: `CNAME cms → cms.yourdomain.com.cdn.cloudflare.net`
 
+5. **Secure Railway Access:**
+   - Add to Railway environment: `HUGO_ALLOWED_DOMAINS=cms.yourdomain.com`
+   - This blocks direct Railway URL access, forcing traffic through Cloudflare
+
 **Result:** `https://cms.yourdomain.com` accessible only to whitelisted IPs
 
 #### Alternative: Simple Deployment

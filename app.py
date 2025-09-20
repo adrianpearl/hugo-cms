@@ -25,6 +25,15 @@ load_dotenv()
 
 app = Flask(__name__)
 
+@app.before_request
+def restrict_domain_access():
+    """Ensure access only through approved domains"""
+    allowed_domains = os.getenv('HUGO_ALLOWED_DOMAINS', '').split(',')
+    if allowed_domains and allowed_domains[0]:  # Only check if domains are configured
+        host = request.host.lower()
+        if not any(domain.strip() for domain in allowed_domains if host == domain.strip().lower()):
+            return "Access restricted to approved domains only", 403
+
 # Global configuration with environment variable defaults
 config = {
     'hugo_repo_path': None,  # Local working directory path
