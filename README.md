@@ -99,9 +99,29 @@ hugo-cms/
 
 ### Production Deployment
 
-1. Clone this repository to your server
-2. Configure `.env` with your production settings
-3. Use a production WSGI server like Gunicorn:
+#### Secure Deployment (Railway + Cloudflare + Netlify DNS)
+
+1. **Deploy to Railway:**
+   ```bash
+   railway login
+   railway init
+   railway up
+   ```
+
+2. **Configure Custom Domain:**
+   - Railway Dashboard → Add Domain: `cms.yourdomain.com`
+
+3. **Setup Cloudflare:**
+   - Add `yourdomain.com` to Cloudflare (free plan)
+   - DNS Record: `CNAME cms → your-app.railway.app` (proxied 🧡)
+   - Security → IP Access Rules → Whitelist editor IPs
+
+4. **Update Netlify DNS:**
+   - Add: `CNAME cms → cms.yourdomain.com.cdn.cloudflare.net`
+
+**Result:** `https://cms.yourdomain.com` accessible only to whitelisted IPs
+
+#### Alternative: Simple Deployment
 
 ```bash
 pip install gunicorn
