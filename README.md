@@ -44,7 +44,32 @@ HUGO_WORKING_DIR=/tmp/hugo-cms-work
 
 ### 3. Run the Application
 
+#### Option A: Docker (Recommended for Development)
+
+Docker ensures your local environment matches the production Railway deployment exactly.
+
 ```bash
+# Easy way - use the provided script
+./run-local.sh
+
+# Or manually:
+docker build -t hugo-cms .
+docker run -d --name hugo-cms-dev -p 5000:5000 \
+  -e GIT_PYTHON_REFRESH=quiet \
+  -v hugo_cms_data:/tmp/hugo-cms-work \
+  hugo-cms
+
+# View logs
+docker logs -f hugo-cms-dev
+
+# Stop when done
+docker stop hugo-cms-dev && docker rm hugo-cms-dev
+```
+
+#### Option B: Direct Python (Alternative)
+
+```bash
+# Requires Hugo and Git installed locally
 python3 app.py
 ```
 
@@ -74,27 +99,86 @@ If environment variables aren't configured, the setup page will allow manual ent
 
 ## Security
 
+### Branch-Based Security (Recommended)
+- 🌿 **Default Branch**: The CMS defaults to the `cms-beta` branch instead of `main`
+- 🏭 **Production Isolation**: Changes are committed to `cms-beta`, keeping production (`main`) safe
+- 👀 **Review Process**: Review changes in `cms-beta` before merging to `main`
+- 🛡️ **Branch Protection**: Set up GitHub branch protection rules for `main` (see `GITHUB_TOKEN_SETUP.md`)
+
+### Access Controls & Monitoring
 - 🔒 **Environment Variables**: Keep sensitive tokens out of your code
 - 🙈 **Git Ignore**: `.env` files are automatically ignored by Git
-- 🔐 **Token Permissions**: Use tokens with minimal required permissions
+- 🔐 **Fine-Grained Tokens**: Use GitHub fine-grained tokens with minimal permissions (see `GITHUB_TOKEN_SETUP.md`)
+- 📊 **Security Logging**: All file modifications and git pushes are logged with IP addresses
+- 🔄 **Token Rotation**: Regularly rotate GitHub tokens
 
 ## Development
 
 ### Requirements
 
+#### Docker Development (Recommended)
+- Docker and Docker CLI
+- Git (for version control)
+
+#### Direct Python Development (Alternative)
 - Python 3.7+
 - Git
 - Hugo (installed and in PATH)
+
+### Docker Development Workflow
+
+```bash
+# 1. Make code changes
+vim app.py
+
+# 2. Test changes
+./run-local.sh
+
+# 3. View logs and test functionality
+docker logs -f hugo-cms-dev
+
+# 4. Stop container when done
+docker stop hugo-cms-dev && docker rm hugo-cms-dev
+
+# 5. Commit and deploy
+git add -A
+git commit -m "Your changes"
+git push  # Triggers Railway deployment
+```
 
 ### Project Structure
 
 ```
 hugo-cms/
-├── app.py              # Main Flask application
-├── requirements.txt    # Python dependencies
-├── .env.example       # Environment variables template
-├── .gitignore         # Git ignore rules
-└── README.md          # This file
+├── app.py                    # Main Flask application
+├── requirements.txt          # Python dependencies
+├── Dockerfile               # Docker container configuration
+├── run-local.sh             # Local development script
+├── .env.example             # Environment variables template
+├── GITHUB_TOKEN_SETUP.md    # Security setup guide
+├── .gitignore               # Git ignore rules
+└── README.md                # This file
+```
+
+### Docker Troubleshooting
+
+```bash
+# Container won't start?
+docker logs hugo-cms-dev
+
+# Port already in use?
+docker ps  # Check for existing containers
+docker stop hugo-cms-dev && docker rm hugo-cms-dev
+
+# Clean rebuild after code changes
+docker build --no-cache -t hugo-cms .
+
+# Access container shell for debugging
+docker exec -it hugo-cms-dev /bin/bash
+
+# Remove all hugo-cms containers and images
+docker ps -a | grep hugo-cms | awk '{print $1}' | xargs docker rm -f
+docker images | grep hugo-cms | awk '{print $3}' | xargs docker rmi -f
 ```
 
 ### Production Deployment

@@ -18,6 +18,8 @@ from watchdog.events import FileSystemEventHandler
 import re
 from urllib.parse import unquote
 from dotenv import load_dotenv  # For .env file support
+import logging
+from datetime import datetime
 
 # Initialize git module with proper error handling
 def init_git():
@@ -57,6 +59,13 @@ def init_git():
 # Load environment variables from .env file
 load_dotenv()
 
+# Configure security logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+security_logger = logging.getLogger('hugo-cms-security')
+
 app = Flask(__name__)
 
 @app.before_request
@@ -75,7 +84,7 @@ config = {
     'hugo_public_dir': None,
     # Git repository settings from environment variables
     'git_repo_url': os.getenv('HUGO_GIT_REPO_URL'),
-    'git_branch': os.getenv('HUGO_GIT_BRANCH', 'main'),
+    'git_branch': os.getenv('HUGO_GIT_BRANCH', 'cms-beta'),
     'git_token': os.getenv('HUGO_GIT_TOKEN'),
     'working_dir': os.getenv('HUGO_WORKING_DIR', '/tmp/hugo-cms-work')
 }
@@ -205,6 +214,10 @@ def commit_and_push_changes(commit_message="Update content via CMS"):
         # Push to remote
         origin = repo.remotes.origin
         origin.push(config['git_branch'])
+        
+        # Log security event
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        security_logger.info(f"GIT_PUSH - Changes pushed to {config['git_branch']} branch from IP: {client_ip}")
         
         return True, "Changes committed and pushed successfully"
         
@@ -1090,6 +1103,10 @@ def api_save_file(file_path):
         with open(full_path, 'wb') as f:
             f.write(formatted_content.encode('utf-8'))
         
+        # Log security event
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        security_logger.info(f"FILE_SAVE - Modified file: {file_path} from IP: {client_ip}")
+        
         # Rebuild site
         build_hugo_site()
         
@@ -1133,6 +1150,10 @@ def api_create_file():
         # Write to file with Unix line endings
         with open(full_path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(frontmatter.dumps(post))
+        
+        # Log security event
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        security_logger.info(f"FILE_CREATE - Created new file: {filename} from IP: {client_ip}")
         
         # Rebuild site
         build_hugo_site()
