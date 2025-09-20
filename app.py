@@ -68,6 +68,9 @@ security_logger = logging.getLogger('hugo-cms-security')
 
 app = Flask(__name__)
 
+# Global file watcher observer
+file_observer = None
+
 @app.before_request
 def restrict_domain_access():
     """Ensure access only through approved domains"""
@@ -126,14 +129,77 @@ def validate_hugo_site(repo_path):
     
     return True, "Valid Hugo site"
 
+def start_file_watcher():
+    """Start the file watcher for content changes"""
+    global file_observer
+    
+    # Stop existing watcher first
+    if file_observer is not None:
+        file_observer.stop()
+        file_observer.join(timeout=1)
+        file_observer = None
+    
+    # Start new watcher if Hugo repo is configured
+    if config.get('hugo_repo_path'):
+        content_dir = os.path.join(config['hugo_repo_path'], 'content')
+        if os.path.exists(content_dir):
+            event_handler = HugoRebuildHandler()
+            file_observer = Observer()
+            file_observer.schedule(event_handler, content_dir, recursive=True)
+            file_observer.start()
+            print(f"Started file watcher on {content_dir}")
+            return True
+    return False
+
 def clear_cached_repo():
     """Clear the cached repository clone"""
+    global file_observer
+    
     try:
+        # Stop the file watcher first to release file handles
+        if file_observer is not None:
+            print("Stopping file watcher...")
+            file_observer.stop()
+            file_observer.join(timeout=2)  # Wait up to 2 seconds for clean shutdown
+            file_observer = None
+            print("File watcher stopped")
+        else:
+            print("No file watcher to stop")
+        
         working_dir = config['working_dir']
-        if os.path.exists(working_dir):
-            shutil.rmtree(working_dir)
-            print(f"Cleared cached repository at {working_dir}")
-            return True, "Repository cache cleared"
+        repo_dir = os.path.join(working_dir, 'repo')
+        
+        if os.path.exists(repo_dir):
+            print(f"Removing repository contents from {repo_dir}...")
+            try:
+                # Remove the repo directory contents instead of the whole working_dir
+                shutil.rmtree(repo_dir)
+                print(f"Cleared repository at {repo_dir}")
+                
+                # Reset config to clean state
+                config['hugo_repo_path'] = None
+                config['hugo_site_built'] = False
+                config['hugo_public_dir'] = None
+                
+                return True, "Repository cache cleared"
+            except OSError as e:
+                if "Device or resource busy" in str(e):
+                    # If still busy, try removing individual items
+                    print("Directory busy, trying to clear individual items...")
+                    try:
+                        for item in os.listdir(repo_dir):
+                            item_path = os.path.join(repo_dir, item)
+                            if os.path.isdir(item_path):
+                                shutil.rmtree(item_path)
+                            else:
+                                os.remove(item_path)
+                        print(f"Cleared repository contents from {repo_dir}")
+                        return True, "Repository cache cleared (individual items)"
+                    except Exception as e2:
+                        return False, f"Failed to clear cache: {str(e2)}"
+                else:
+                    raise e
+        
         return True, "No cached repository to clear"
     except Exception as e:
         return False, f"Error clearing repository cache: {str(e)}"
@@ -232,7 +298,7 @@ def build_hugo_site():
     if not os.path.exists(config['hugo_repo_path']):
         return False, f"Hugo repository path does not exist: {config['hugo_repo_path']}"
     
-    original_cwd = os.getcwd()  # Save current directory outside try block
+    original_cwd = os.getcwd()
     
     try:
         # Change to Hugo site directory
@@ -245,7 +311,9 @@ def build_hugo_site():
         os.chdir(original_cwd)
         
         if result.returncode != 0:
-            return False, f"Hugo build failed: {result.stderr}"
+            error_msg = f"Hugo build failed (return code {result.returncode})\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            print(error_msg)
+            return False, error_msg
         
         # Set public directory path
         config['hugo_public_dir'] = os.path.join(config['hugo_repo_path'], 'public')
@@ -255,7 +323,7 @@ def build_hugo_site():
         return True, "Hugo site built successfully"
         
     except Exception as e:
-        # Try to restore original directory
+        # Restore original directory
         try:
             os.chdir(original_cwd)
         except:
@@ -536,6 +604,28 @@ def inject_admin_controls(html_content, source_file=None):
     border: 1px solid #ddd;
     border-radius: 3px;
 }
+.hugo-cms-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+.hugo-cms-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007cba;
+    border-radius: 50%;
+    animation: hugo-cms-spin 1s linear infinite;
+    margin-left: 8px;
+}
+@keyframes hugo-cms-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.hugo-cms-admin button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
 </style>
 '''
     
@@ -553,6 +643,72 @@ def inject_admin_controls(html_content, source_file=None):
     admin_js = f'''
 <script>
 let currentSourceFile = '{source_file or ''}';
+
+// Loading state management
+function setButtonLoading(buttonElement, isLoading, originalText) {{
+    if (isLoading) {{
+        buttonElement.disabled = true;
+        buttonElement.classList.add('hugo-cms-loading');
+        buttonElement.innerHTML = originalText + '<span class="hugo-cms-spinner"></span>';
+    }} else {{
+        buttonElement.disabled = false;
+        buttonElement.classList.remove('hugo-cms-loading');
+        buttonElement.innerHTML = originalText;
+    }}
+}}
+
+function setAllButtonsLoading(isLoading) {{
+    const buttons = document.querySelectorAll('.hugo-cms-admin button');
+    buttons.forEach(button => {{
+        button.disabled = isLoading;
+        if (isLoading) {{
+            button.classList.add('hugo-cms-loading');
+        }} else {{
+            button.classList.remove('hugo-cms-loading');
+        }}
+    }});
+}}
+
+function updateFilenamePreview(input) {{
+    const preview = document.getElementById('filename-preview');
+    if (preview) {{
+        const value = input.value.trim();
+        if (value) {{
+            const finalFilename = value.endsWith('.md') ? value : value + '.md';
+            preview.textContent = `Will create: ${{finalFilename}}`;
+            preview.style.display = 'block';
+        }} else {{
+            preview.style.display = 'none';
+        }}
+    }}
+}}
+
+function showNotification(message, isSuccess = true) {{
+    // Create a temporary notification instead of using alert
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 10px;
+        background: ${{isSuccess ? '#4CAF50' : '#f44336'}};
+        color: white;
+        padding: 15px;
+        border-radius: 5px;
+        z-index: 10001;
+        font-family: Arial, sans-serif;
+        max-width: 300px;
+        word-wrap: break-word;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 4 seconds
+    setTimeout(() => {{
+        if (notification.parentNode) {{
+            notification.parentNode.removeChild(notification);
+        }}
+    }}, 4000);
+}}
 
 function editCurrentPage() {{
     if (!currentSourceFile) {{
@@ -611,8 +767,10 @@ function showEditModal(frontmatter, content, filePath) {{
             <form class="hugo-cms-form" onsubmit="savePage(event, '${{filePath || ''}}')">
                 ${{!filePath ? `
                     <div>
-                        <label>File Path:</label>
-                        <input type="text" name="filename" placeholder="news/recent-news-item.md" required />
+                        <label>File Path: <small style="color: #666;">(will auto-add .md if not included)</small></label>
+                        <input type="text" name="filename" placeholder="news/recent-news-item" required 
+                               oninput="updateFilenamePreview(this)" />
+                        <small id="filename-preview" style="color: #007cba; display: block; margin-top: 5px;"></small>
                     </div>
                 ` : ''}}
                 
@@ -647,6 +805,12 @@ function savePage(event, filePath) {{
     event.preventDefault();
     const form = event.target;
     const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.innerHTML;
+    
+    // Show loading state
+    setButtonLoading(submitButton, true, filePath ? 'Saving...' : 'Creating...');
+    setAllButtonsLoading(true);
     
     const url = filePath ? 
         `/admin/api/save/${{encodeURIComponent(filePath)}}` : 
@@ -658,8 +822,12 @@ function savePage(event, filePath) {{
     }})
     .then(response => response.json())
     .then(data => {{
+        // Reset loading state
+        setButtonLoading(submitButton, false, originalButtonText);
+        setAllButtonsLoading(false);
+        
         if (data.success) {{
-            alert(data.message);
+            showNotification(data.message);
             closeModal();
             
             // If this is a new page creation, navigate to the new page
@@ -670,22 +838,42 @@ function savePage(event, filePath) {{
                 setTimeout(() => location.reload(), 1000);
             }}
         }} else {{
-            alert('Error: ' + data.message);
+            showNotification('Error: ' + data.message, false);
         }}
     }})
     .catch(error => {{
-        alert('Error: ' + error.message);
+        // Reset loading state
+        setButtonLoading(submitButton, false, originalButtonText);
+        setAllButtonsLoading(false);
+        showNotification('Error: ' + error.message, false);
     }});
 }}
 
 function rebuildSite() {{
+    const buildButton = document.querySelector('button[onclick="rebuildSite()"]');
+    const originalText = '🔄 Build';
+    
+    // Show loading state
+    setButtonLoading(buildButton, true, '🔄 Building...');
+    setAllButtonsLoading(true);
+    
     fetch('/admin/api/build')
         .then(response => response.json())
         .then(data => {{
-            alert(data.message);
+            // Reset loading state
+            setButtonLoading(buildButton, false, originalText);
+            setAllButtonsLoading(false);
+            
+            showNotification(data.message, data.success);
             if (data.success) {{
                 setTimeout(() => location.reload(), 1000);
             }}
+        }})
+        .catch(error => {{
+            // Reset loading state
+            setButtonLoading(buildButton, false, originalText);
+            setAllButtonsLoading(false);
+            showNotification('Error: ' + error.message, false);
         }});
 }}
 
@@ -694,15 +882,29 @@ function publishChanges() {{
         return;
     }}
     
+    const publishButton = document.querySelector('button[onclick="publishChanges()"]');
+    const originalText = '🚀 Publish';
+    
+    // Show loading state
+    setButtonLoading(publishButton, true, '🚀 Publishing...');
+    setAllButtonsLoading(true);
+    
     fetch('/admin/api/publish', {{
         method: 'POST'
     }})
     .then(response => response.json())
     .then(data => {{
-        alert(data.message);
+        // Reset loading state
+        setButtonLoading(publishButton, false, originalText);
+        setAllButtonsLoading(false);
+        
+        showNotification(data.message, data.success);
     }})
     .catch(error => {{
-        alert('Error: ' + error.message);
+        // Reset loading state
+        setButtonLoading(publishButton, false, originalText);
+        setAllButtonsLoading(false);
+        showNotification('Error: ' + error.message, false);
     }});
 }}
 
@@ -711,18 +913,32 @@ function clearCache() {{
         return;
     }}
     
+    const clearButton = document.querySelector('button[onclick="clearCache()"]');
+    const originalText = '🗑️ Clear Cache';
+    
+    // Show loading state
+    setButtonLoading(clearButton, true, '🗑️ Clearing...');
+    setAllButtonsLoading(true);
+    
     fetch('/admin/api/clear-cache', {{
         method: 'POST'
     }})
     .then(response => response.json())
     .then(data => {{
-        alert(data.message);
+        // Reset loading state
+        setButtonLoading(clearButton, false, originalText);
+        setAllButtonsLoading(false);
+        
+        showNotification(data.message, data.success);
         if (data.success) {{
             setTimeout(() => location.reload(), 1000);
         }}
     }})
     .catch(error => {{
-        alert('Error: ' + error.message);
+        // Reset loading state
+        setButtonLoading(clearButton, false, originalText);
+        setAllButtonsLoading(false);
+        showNotification('Error: ' + error.message, false);
     }});
 }}
 
@@ -1037,15 +1253,10 @@ def api_publish():
 def api_clear_cache():
     """API endpoint to clear the repository cache and re-clone"""
     try:
-        # Clear the cached repository
+        # Clear the cached repository (this also resets config)
         clear_success, clear_message = clear_cached_repo()
         if not clear_success:
             return jsonify({'success': False, 'message': clear_message})
-        
-        # Reset hugo_repo_path to avoid stale references
-        config['hugo_repo_path'] = None
-        config['hugo_site_built'] = False
-        config['hugo_public_dir'] = None
         
         # Re-setup the repository
         setup_success, setup_message = setup_git_repo()
@@ -1056,6 +1267,9 @@ def api_clear_cache():
         build_success, build_message = build_hugo_site()
         if not build_success:
             return jsonify({'success': False, 'message': f'Re-cloned successfully but build failed: {build_message}'})
+        
+        # Restart the file watcher
+        start_file_watcher()
         
         return jsonify({'success': True, 'message': 'Repository cache cleared, re-cloned, and rebuilt successfully'})
     
@@ -1183,31 +1397,28 @@ if __name__ == '__main__':
     saved_config = load_config()
     config.update(saved_config)
     
-    # If Git repository is configured, set it up
-    if config.get('git_repo_url'):
-        print(f"Setting up Git repository: {config['git_repo_url']}")
+    # Only run setup in the main process, not in Flask's debug reloader subprocess
+    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        # If Git repository is configured, set it up
+        if config.get('git_repo_url'):
+            print(f"Setting up Git repository: {config['git_repo_url']}")
+            
+            # Clear any existing cached repository on startup
+            clear_success, clear_message = clear_cached_repo()
+            if not clear_success:
+                print(f"Warning: {clear_message}")
+            
+            success, message = setup_git_repo()
+            if success:
+                print(f"Git repository ready: {message}")
+            else:
+                print(f"Git setup warning: {message}")
         
-        # Clear any existing cached repository on startup
-        clear_success, clear_message = clear_cached_repo()
-        if not clear_success:
-            print(f"Warning: {clear_message}")
-        
-        success, message = setup_git_repo()
-        if success:
-            print(f"Git repository ready: {message}")
-        else:
-            print(f"Git setup warning: {message}")
-    
-    # Set up file watcher if Hugo repo is configured
-    if config.get('hugo_repo_path'):
-        content_dir = os.path.join(config['hugo_repo_path'], 'content')
-        if os.path.exists(content_dir):
-            event_handler = HugoRebuildHandler()
-            observer = Observer()
-            observer.schedule(event_handler, content_dir, recursive=True)
-            observer.start()
-    
-    print("Hugo CMS Companion starting...")
-    print(f"Access the application at: http://localhost:5000")
+        print("Hugo CMS Companion starting...")
+        print(f"Access the application at: http://localhost:5000")
+    else:
+        # In the reloader subprocess, start file watcher if possible
+        if config.get('hugo_repo_path'):
+            start_file_watcher()
     
     app.run(debug=True, host='0.0.0.0', port=5000)
