@@ -29,6 +29,10 @@ wheels/
 # Hugo working directories
 /tmp/hugo-cms-work/
 
+# Railway/Docker (keep these in repo for deployment)
+# nixpacks.toml
+# Dockerfile
+
 # IDE
 .vscode/
 .idea/
