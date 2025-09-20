@@ -17,8 +17,42 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import re
 from urllib.parse import unquote
-import git  # GitPython for Git operations
 from dotenv import load_dotenv  # For .env file support
+
+# Initialize git module with proper error handling
+def init_git():
+    """Initialize GitPython with proper error handling"""
+    try:
+        # Set environment variable to suppress git warnings
+        os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
+        
+        import git
+        
+        # Try common git executable paths
+        git_paths = ['/usr/bin/git', '/bin/git', '/usr/local/bin/git']
+        
+        for git_path in git_paths:
+            if os.path.exists(git_path):
+                try:
+                    git.refresh(git_path)
+                    print(f"Git initialized with executable: {git_path}")
+                    return git, None
+                except:
+                    continue
+        
+        # If no specific path works, try default refresh
+        try:
+            git.refresh()
+            return git, None
+        except:
+            pass
+            
+        return None, "Git executable not found in common paths"
+        
+    except ImportError as e:
+        return None, f"Git import error: {str(e)}"
+    except Exception as e:
+        return None, f"Unexpected git error: {str(e)}"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -100,6 +134,11 @@ def setup_git_repo():
     if not config['git_repo_url']:
         return False, "No Git repository URL configured"
     
+    # Initialize git module
+    git, git_error = init_git()
+    if not git:
+        return False, f"Git not available: {git_error}"
+    
     try:
         working_dir = config['working_dir']
         repo_dir = os.path.join(working_dir, 'repo')
@@ -144,6 +183,11 @@ def commit_and_push_changes(commit_message="Update content via CMS"):
     """Commit local changes and push to remote repository"""
     if not config['hugo_repo_path'] or not os.path.exists(config['hugo_repo_path']):
         return False, "No working directory found"
+    
+    # Initialize git module
+    git, git_error = init_git()
+    if not git:
+        return False, f"Git not available: {git_error}"
     
     try:
         repo = git.Repo(config['hugo_repo_path'])
