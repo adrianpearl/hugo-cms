@@ -1,0 +1,10 @@
+<div class="hugo-cms-admin">
+    <div>Hugo CMS</div>
+    {% if source_file %}
+    <button onclick="editCurrentPage()" title="Edit this page">✏️ Edit</button>
+    {% endif %}
+    <button onclick="createNewPage()" title="Create new page">➕ New</button>
+    <button onclick="rebuildSite()" title="Rebuild site">🔄 Build</button>
+    <button onclick="publishChanges()" title="Publish to Git repository">🚀 Publish</button>
+    <button onclick="clearCache()" title="Clear repository cache and re-clone">🗑️ Clear Cache</button>
+</div>

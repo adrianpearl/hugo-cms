@@ -11,6 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, Response
+from jinja2 import Template
 import yaml
 import frontmatter
 from watchdog.observers import Observer
@@ -539,424 +540,40 @@ def is_binary_file(file_path):
             return True
 
 def inject_admin_controls(html_content, source_file=None):
-    """Inject admin controls into HTML content"""
-    admin_css = '''
-<style>
-.hugo-cms-admin {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    z-index: 9999;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 10px;
-    border-radius: 5px;
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-}
-.hugo-cms-admin button {
-    background: #007cba;
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    margin: 2px;
-    border-radius: 3px;
-    cursor: pointer;
-}
-.hugo-cms-admin button:hover {
-    background: #005a87;
-}
-.hugo-cms-modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 10000;
-}
-.hugo-cms-modal-content {
-    background: white;
-    margin: 5% auto;
-    padding: 20px;
-    width: 80%;
-    max-width: 800px;
-    border-radius: 5px;
-    max-height: 80vh;
-    overflow-y: auto;
-}
-.hugo-cms-close {
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-}
-.hugo-cms-form textarea {
-    width: 100%;
-    height: 300px;
-    margin: 10px 0;
-}
-.hugo-cms-form input[type="text"], .hugo-cms-form input[type="date"] {
-    width: 100%;
-    padding: 8px;
-    margin: 5px 0;
-    border: 1px solid #ddd;
-    border-radius: 3px;
-}
-.hugo-cms-loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-.hugo-cms-spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid #f3f3f3;
-    border-top: 2px solid #007cba;
-    border-radius: 50%;
-    animation: hugo-cms-spin 1s linear infinite;
-    margin-left: 8px;
-}
-@keyframes hugo-cms-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-.hugo-cms-admin button:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-}
-</style>
-'''
-    
-    admin_controls = f'''
-<div class="hugo-cms-admin">
-    <div>Hugo CMS</div>
-    {f'<button onclick="editCurrentPage()" title="Edit this page">✏️ Edit</button>' if source_file else ''}
-    <button onclick="createNewPage()" title="Create new page">➕ New</button>
-    <button onclick="rebuildSite()" title="Rebuild site">🔄 Build</button>
-    <button onclick="publishChanges()" title="Publish to Git repository">🚀 Publish</button>
-    <button onclick="clearCache()" title="Clear repository cache and re-clone">🗑️ Clear Cache</button>
-</div>
-'''
-    
-    admin_js = f'''
+    """Inject admin controls into HTML content using external files"""
+    try:
+        # Load admin controls template
+        with open('static/templates/admin_controls.html', 'r', encoding='utf-8') as f:
+            admin_controls_template = Template(f.read())
+        
+        # Render the admin controls with context
+        admin_controls = admin_controls_template.render(source_file=source_file)
+        
+        # Create CSS link tag
+        admin_css = '<link rel="stylesheet" href="/admin/static/css/admin.css">'
+        
+        # Create JavaScript configuration and script tags
+        config_js = f'''
 <script>
-let currentSourceFile = '{source_file or ''}';
-
-// Loading state management
-function setButtonLoading(buttonElement, isLoading, originalText) {{
-    if (isLoading) {{
-        buttonElement.disabled = true;
-        buttonElement.classList.add('hugo-cms-loading');
-        buttonElement.innerHTML = originalText + '<span class="hugo-cms-spinner"></span>';
-    }} else {{
-        buttonElement.disabled = false;
-        buttonElement.classList.remove('hugo-cms-loading');
-        buttonElement.innerHTML = originalText;
-    }}
-}}
-
-function setAllButtonsLoading(isLoading) {{
-    const buttons = document.querySelectorAll('.hugo-cms-admin button');
-    buttons.forEach(button => {{
-        button.disabled = isLoading;
-        if (isLoading) {{
-            button.classList.add('hugo-cms-loading');
-        }} else {{
-            button.classList.remove('hugo-cms-loading');
-        }}
-    }});
-}}
-
-function updateFilenamePreview(input) {{
-    const preview = document.getElementById('filename-preview');
-    if (preview) {{
-        const value = input.value.trim();
-        if (value) {{
-            const finalFilename = value.endsWith('.md') ? value : value + '.md';
-            preview.textContent = `Will create: ${{finalFilename}}`;
-            preview.style.display = 'block';
-        }} else {{
-            preview.style.display = 'none';
-        }}
-    }}
-}}
-
-function showNotification(message, isSuccess = true) {{
-    // Create a temporary notification instead of using alert
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 10px;
-        background: ${{isSuccess ? '#4CAF50' : '#f44336'}};
-        color: white;
-        padding: 15px;
-        border-radius: 5px;
-        z-index: 10001;
-        font-family: Arial, sans-serif;
-        max-width: 300px;
-        word-wrap: break-word;
-    `;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 4 seconds
-    setTimeout(() => {{
-        if (notification.parentNode) {{
-            notification.parentNode.removeChild(notification);
-        }}
-    }}, 4000);
-}}
-
-function editCurrentPage() {{
-    if (!currentSourceFile) {{
-        alert('No source file found for this page');
-        return;
-    }}
-    
-    fetch(`/admin/api/get-content/${{encodeURIComponent(currentSourceFile)}}`)
-        .then(response => response.json())
-        .then(data => {{
-            if (data.success) {{
-                showEditModal(data.frontmatter, data.content, currentSourceFile);
-            }} else {{
-                alert('Error loading content: ' + data.message);
-            }}
-        }});
-}}
-
-function createNewPage() {{
-    showEditModal({{}}, '', null);
-}}
-
-function showEditModal(frontmatter, content, filePath) {{
-    const modal = document.getElementById('hugo-cms-modal') || createModal();
-    
-    let frontmatterFields = '';
-    const commonFields = ['title', 'date', 'draft', 'tags', 'categories'];
-    
-    // Add existing frontmatter fields
-    for (const [key, value] of Object.entries(frontmatter)) {{
-        frontmatterFields += `
-            <div>
-                <label>${{key}}:</label>
-                <input type="text" name="fm_${{key}}" value="${{value}}" />
-            </div>
-        `;
-    }}
-    
-    // Add common fields if not present
-    for (const field of commonFields) {{
-        if (!frontmatter.hasOwnProperty(field)) {{
-            const inputType = field === 'date' ? 'date' : 'text';
-            frontmatterFields += `
-                <div>
-                    <label>${{field}}:</label>
-                    <input type="${{inputType}}" name="fm_${{field}}" value="" />
-                </div>
-            `;
-        }}
-    }}
-    
-    modal.innerHTML = `
-        <div class="hugo-cms-modal-content">
-            <span class="hugo-cms-close" onclick="closeModal()">&times;</span>
-            <h2>${{filePath ? 'Edit Page' : 'Create New Page'}}</h2>
-            <form class="hugo-cms-form" onsubmit="savePage(event, '${{filePath || ''}}')">
-                ${{!filePath ? `
-                    <div>
-                        <label>File Path: <small style="color: #666;">(will auto-add .md if not included)</small></label>
-                        <input type="text" name="filename" placeholder="news/recent-news-item" required 
-                               oninput="updateFilenamePreview(this)" />
-                        <small id="filename-preview" style="color: #007cba; display: block; margin-top: 5px;"></small>
-                    </div>
-                ` : ''}}
-                
-                <h3>Frontmatter</h3>
-                ${{frontmatterFields}}
-                
-                <h3>Content</h3>
-                <textarea name="content" placeholder="Write your content here...">${{content}}</textarea>
-                
-                <button type="submit">${{filePath ? 'Save Changes' : 'Create Page'}}</button>
-            </form>
-        </div>
-    `;
-    
-    modal.style.display = 'block';
-}}
-
-function createModal() {{
-    const modal = document.createElement('div');
-    modal.id = 'hugo-cms-modal';
-    modal.className = 'hugo-cms-modal';
-    document.body.appendChild(modal);
-    return modal;
-}}
-
-function closeModal() {{
-    const modal = document.getElementById('hugo-cms-modal');
-    if (modal) modal.style.display = 'none';
-}}
-
-function savePage(event, filePath) {{
-    event.preventDefault();
-    const form = event.target;
-    const formData = new FormData(form);
-    const submitButton = form.querySelector('button[type="submit"]');
-    const originalButtonText = submitButton.innerHTML;
-    
-    // Show loading state
-    setButtonLoading(submitButton, true, filePath ? 'Saving...' : 'Creating...');
-    setAllButtonsLoading(true);
-    
-    const url = filePath ? 
-        `/admin/api/save/${{encodeURIComponent(filePath)}}` : 
-        '/admin/api/create';
-    
-    fetch(url, {{
-        method: 'POST',
-        body: formData
-    }})
-    .then(response => response.json())
-    .then(data => {{
-        // Reset loading state
-        setButtonLoading(submitButton, false, originalButtonText);
-        setAllButtonsLoading(false);
-        
-        if (data.success) {{
-            showNotification(data.message);
-            closeModal();
-            
-            // If this is a new page creation, navigate to the new page
-            if (!filePath && data.url) {{
-                setTimeout(() => window.location.href = data.url, 1000);
-            }} else {{
-                // For edits, reload the current page
-                setTimeout(() => location.reload(), 1000);
-            }}
-        }} else {{
-            showNotification('Error: ' + data.message, false);
-        }}
-    }})
-    .catch(error => {{
-        // Reset loading state
-        setButtonLoading(submitButton, false, originalButtonText);
-        setAllButtonsLoading(false);
-        showNotification('Error: ' + error.message, false);
-    }});
-}}
-
-function rebuildSite() {{
-    const buildButton = document.querySelector('button[onclick="rebuildSite()"]');
-    const originalText = '🔄 Build';
-    
-    // Show loading state
-    setButtonLoading(buildButton, true, '🔄 Building...');
-    setAllButtonsLoading(true);
-    
-    fetch('/admin/api/build')
-        .then(response => response.json())
-        .then(data => {{
-            // Reset loading state
-            setButtonLoading(buildButton, false, originalText);
-            setAllButtonsLoading(false);
-            
-            showNotification(data.message, data.success);
-            if (data.success) {{
-                setTimeout(() => location.reload(), 1000);
-            }}
-        }})
-        .catch(error => {{
-            // Reset loading state
-            setButtonLoading(buildButton, false, originalText);
-            setAllButtonsLoading(false);
-            showNotification('Error: ' + error.message, false);
-        }});
-}}
-
-function publishChanges() {{
-    if (!confirm('Are you sure you want to publish all changes to the Git repository?')) {{
-        return;
-    }}
-    
-    const publishButton = document.querySelector('button[onclick="publishChanges()"]');
-    const originalText = '🚀 Publish';
-    
-    // Show loading state
-    setButtonLoading(publishButton, true, '🚀 Publishing...');
-    setAllButtonsLoading(true);
-    
-    fetch('/admin/api/publish', {{
-        method: 'POST'
-    }})
-    .then(response => response.json())
-    .then(data => {{
-        // Reset loading state
-        setButtonLoading(publishButton, false, originalText);
-        setAllButtonsLoading(false);
-        
-        showNotification(data.message, data.success);
-    }})
-    .catch(error => {{
-        // Reset loading state
-        setButtonLoading(publishButton, false, originalText);
-        setAllButtonsLoading(false);
-        showNotification('Error: ' + error.message, false);
-    }});
-}}
-
-function clearCache() {{
-    if (!confirm('Are you sure you want to clear the repository cache and re-clone? This will discard any uncommitted local changes.')) {{
-        return;
-    }}
-    
-    const clearButton = document.querySelector('button[onclick="clearCache()"]');
-    const originalText = '🗑️ Clear Cache';
-    
-    // Show loading state
-    setButtonLoading(clearButton, true, '🗑️ Clearing...');
-    setAllButtonsLoading(true);
-    
-    fetch('/admin/api/clear-cache', {{
-        method: 'POST'
-    }})
-    .then(response => response.json())
-    .then(data => {{
-        // Reset loading state
-        setButtonLoading(clearButton, false, originalText);
-        setAllButtonsLoading(false);
-        
-        showNotification(data.message, data.success);
-        if (data.success) {{
-            setTimeout(() => location.reload(), 1000);
-        }}
-    }})
-    .catch(error => {{
-        // Reset loading state
-        setButtonLoading(clearButton, false, originalText);
-        setAllButtonsLoading(false);
-        showNotification('Error: ' + error.message, false);
-    }});
-}}
-
-// Close modal when clicking outside
-window.onclick = function(event) {{
-    const modal = document.getElementById('hugo-cms-modal');
-    if (event.target == modal) {{
-        closeModal();
-    }}
-}}
+// Hugo CMS Configuration
+window.hugoCmsConfig = {{
+    currentSourceFile: '{source_file or ''}'
+}};
 </script>
-'''    
-    
-    # Inject CSS in head
-    html_content = re.sub(r'</head>', admin_css + '</head>', html_content, flags=re.IGNORECASE)
-    
-    # Inject admin controls and JS before closing body tag
-    html_content = re.sub(r'</body>', admin_controls + admin_js + '</body>', html_content, flags=re.IGNORECASE)
+'''
+        admin_js = '<script src="/admin/static/js/admin.js"></script>'
+        
+        # Inject CSS in head
+        html_content = re.sub(r'</head>', admin_css + '</head>', html_content, flags=re.IGNORECASE)
+        
+        # Inject admin controls, config, and JS before closing body tag
+        html_content = re.sub(r'</body>', admin_controls + config_js + admin_js + '</body>', html_content, flags=re.IGNORECASE)
+        
+        return html_content
+        
+    except Exception as e:
+        print(f"Error injecting admin controls: {e}")
+        return html_content
     
     return html_content
 
@@ -1385,6 +1002,17 @@ def api_create_file():
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
+
+# Static file serving routes for admin assets
+@app.route('/admin/static/css/<filename>')
+def admin_css(filename):
+    """Serve admin CSS files"""
+    return send_from_directory('static/css', filename)
+
+@app.route('/admin/static/js/<filename>')
+def admin_js(filename):
+    """Serve admin JavaScript files"""
+    return send_from_directory('static/js', filename)
 
 # Catch-all route to serve Hugo pages
 @app.route('/<path:path>')

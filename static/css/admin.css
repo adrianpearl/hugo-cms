@@ -1,0 +1,95 @@
+.hugo-cms-admin {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+
+.hugo-cms-admin button {
+    background: #007cba;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin: 2px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.hugo-cms-admin button:hover {
+    background: #005a87;
+}
+
+.hugo-cms-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+}
+
+.hugo-cms-modal-content {
+    background: white;
+    margin: 5% auto;
+    padding: 20px;
+    width: 80%;
+    max-width: 800px;
+    border-radius: 5px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.hugo-cms-close {
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.hugo-cms-form textarea {
+    width: 100%;
+    height: 300px;
+    margin: 10px 0;
+}
+
+.hugo-cms-form input[type="text"], .hugo-cms-form input[type="date"] {
+    width: 100%;
+    padding: 8px;
+    margin: 5px 0;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.hugo-cms-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.hugo-cms-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007cba;
+    border-radius: 50%;
+    animation: hugo-cms-spin 1s linear infinite;
+    margin-left: 8px;
+}
+
+@keyframes hugo-cms-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.hugo-cms-admin button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
