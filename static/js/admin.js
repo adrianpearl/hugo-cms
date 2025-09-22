@@ -248,10 +248,10 @@ function publishChanges() {
     }
     
     const publishButton = document.querySelector('button[onclick="publishChanges()"]');
-    const originalText = '🚀 Publish';
+    const originalText = '🚀 Stage for Publishing';
     
     // Show loading state
-    setButtonLoading(publishButton, true, '🚀 Publishing...');
+    setButtonLoading(publishButton, true, '🚀 Staging for Publishing...');
     setAllButtonsLoading(true);
     
     fetch('/admin/api/publish', {
