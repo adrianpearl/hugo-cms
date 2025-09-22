@@ -90,7 +90,10 @@ config = {
     'git_repo_url': os.getenv('HUGO_GIT_REPO_URL'),
     'git_branch': os.getenv('HUGO_GIT_BRANCH', 'cms-beta'),
     'git_token': os.getenv('HUGO_GIT_TOKEN'),
-    'working_dir': os.getenv('HUGO_WORKING_DIR', '/tmp/hugo-cms-work')
+    'working_dir': os.getenv('HUGO_WORKING_DIR', '/tmp/hugo-cms-work'),
+    # File path validation pattern (regex)
+    'file_path_pattern': os.getenv('HUGO_FILE_PATH_PATTERN', ''),
+    'file_path_pattern_hint': os.getenv('HUGO_FILE_PATH_PATTERN_HINT', '')
 }
 
 class HugoRebuildHandler(FileSystemEventHandler):
@@ -514,6 +517,24 @@ def get_content_type(file_path):
     
     return content_types.get(extension, 'application/octet-stream')
 
+def validate_file_path(file_path):
+    """Validate file path against configured pattern"""
+    pattern = config.get('file_path_pattern', '')
+    if not pattern:
+        return True, ''  # No pattern configured, allow all paths
+    
+    try:
+        if re.match(pattern, file_path):
+            return True, ''
+        else:
+            hint = config.get('file_path_pattern_hint', '')
+            if hint:
+                return False, f'File path must match pattern: {hint}'
+            else:
+                return False, f'File path must match pattern: {pattern}'
+    except re.error as e:
+        return False, f'Invalid file path pattern configured: {str(e)}'
+
 def is_binary_file(file_path):
     """Check if a file should be treated as binary"""
     # Check if it's a directory first
@@ -557,7 +578,9 @@ def inject_admin_controls(html_content, source_file=None):
 <script>
 // Hugo CMS Configuration
 window.hugoCmsConfig = {{
-    currentSourceFile: '{source_file or ''}'
+    currentSourceFile: '{source_file or ''}',
+    filePathPattern: '{config.get('file_path_pattern', '')}',
+    filePathPatternHint: '{config.get('file_path_pattern_hint', '')}'
 }};
 </script>
 '''
@@ -955,6 +978,11 @@ def api_create_file():
         
         if not filename.endswith('.md'):
             filename += '.md'
+        
+        # Validate file path against configured pattern
+        is_valid, validation_message = validate_file_path(filename.replace('.md', ''))
+        if not is_valid:
+            return jsonify({'success': False, 'message': validation_message})
         
         # Create path in content directory
         full_path = os.path.join(config['hugo_repo_path'], 'content', filename)

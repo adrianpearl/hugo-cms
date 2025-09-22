@@ -4,8 +4,13 @@
 let currentSourceFile = '';
 
 // Initialize configuration from global config object
+let filePathPattern = '';
+let filePathPatternHint = '';
+
 if (window.hugoCmsConfig) {
     currentSourceFile = window.hugoCmsConfig.currentSourceFile || '';
+    filePathPattern = window.hugoCmsConfig.filePathPattern || '';
+    filePathPatternHint = window.hugoCmsConfig.filePathPatternHint || '';
 }
 
 // Toggle admin panel visibility
@@ -41,13 +46,41 @@ function setAllButtonsLoading(isLoading) {
     });
 }
 
+function validateFilePath(filePath) {
+    if (!filePathPattern) {
+        return { valid: true, message: '' };
+    }
+    
+    try {
+        const regex = new RegExp(filePathPattern);
+        if (regex.test(filePath)) {
+            return { valid: true, message: '' };
+        } else {
+            const hint = filePathPatternHint || filePathPattern;
+            return { valid: false, message: `File path must match pattern: ${hint}` };
+        }
+    } catch (e) {
+        return { valid: false, message: 'Invalid file path pattern configured' };
+    }
+}
+
 function updateFilenamePreview(input) {
     const preview = document.getElementById('filename-preview');
     if (preview) {
         const value = input.value.trim();
         if (value) {
             const finalFilename = value.endsWith('.md') ? value : value + '.md';
-            preview.textContent = `Will create: ${finalFilename}`;
+            const validation = validateFilePath(value);
+            
+            if (validation.valid) {
+                preview.textContent = `Will create: ${finalFilename}`;
+                preview.style.color = '#007cba';
+                preview.classList.remove('error');
+            } else {
+                preview.textContent = validation.message;
+                preview.style.color = '#dc3545';
+                preview.classList.add('error');
+            }
             preview.style.display = 'block';
         } else {
             preview.style.display = 'none';
@@ -137,6 +170,7 @@ function showEditModal(frontmatter, content, filePath) {
         (!filePath ? 
             '<div>' +
             '<label>File Path: <small style="color: #666;">(will auto-add .md if not included)</small></label>' +
+            (filePathPatternHint ? '<div style="color: #666; font-size: 12px; margin-bottom: 5px;">📝 ' + filePathPatternHint + '</div>' : '') +
             '<input type="text" name="filename" placeholder="news/recent-news-item" required ' +
             'oninput="updateFilenamePreview(this)" />' +
             '<small id="filename-preview" style="color: #007cba; display: block; margin-top: 5px;"></small>' +
@@ -172,6 +206,18 @@ function savePage(event, filePath) {
     const formData = new FormData(form);
     const submitButton = form.querySelector('button[type="submit"]');
     const originalButtonText = submitButton.innerHTML;
+    
+    // For new pages, validate file path before submitting
+    if (!filePath) {
+        const filename = formData.get('filename');
+        if (filename) {
+            const validation = validateFilePath(filename);
+            if (!validation.valid) {
+                showNotification(validation.message, false);
+                return;
+            }
+        }
+    }
     
     // Show loading state
     setButtonLoading(submitButton, true, filePath ? 'Saving...' : 'Creating...');
