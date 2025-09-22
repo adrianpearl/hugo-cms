@@ -92,7 +92,7 @@ config = {
     'git_token': os.getenv('HUGO_GIT_TOKEN'),
     'working_dir': os.getenv('HUGO_WORKING_DIR', '/tmp/hugo-cms-work'),
     # File path validation pattern (regex)
-    'file_path_pattern': os.getenv('HUGO_FILE_PATH_PATTERN', ''),
+    'file_path_pattern_regex': os.getenv('HUGO_FILE_PATH_REGEX', ''),
     'file_path_pattern_hint': os.getenv('HUGO_FILE_PATH_PATTERN_HINT', ''),
     # Password protection
     'site_password': os.getenv('HUGO_SITE_PASSWORD', ''),
@@ -560,7 +560,7 @@ def require_auth(f):
 
 def validate_file_path(file_path):
     """Validate file path against configured pattern"""
-    pattern = config.get('file_path_pattern', '')
+    pattern = config.get('file_path_pattern_regex', '')
     if not pattern:
         return True, ''  # No pattern configured, allow all paths
     
@@ -568,7 +568,7 @@ def validate_file_path(file_path):
         if re.match(pattern, file_path):
             return True, ''
         else:
-            hint = config.get('file_path_pattern_regex_hint', '')
+            hint = config.get('file_path_pattern_hint', '')
             if hint:
                 return False, f'File path must match pattern: {hint}'
             else:
@@ -624,7 +624,7 @@ def inject_admin_controls(html_content, source_file=None):
 window.hugoCmsConfig = {{
     currentSourceFile: '{source_file or ''}',
     filePathPattern: '{config.get('file_path_pattern_regex', '')}',
-    filePathPatternHint: '{config.get('file_path_pattern_regex_hint', '')}'
+    filePathPatternHint: '{config.get('file_path_pattern_hint', '')}'
 }};
 </script>
 '''
