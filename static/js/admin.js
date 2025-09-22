@@ -8,6 +8,14 @@ if (window.hugoCmsConfig) {
     currentSourceFile = window.hugoCmsConfig.currentSourceFile || '';
 }
 
+// Toggle admin panel visibility
+function toggleAdminPanel() {
+    const panel = document.getElementById('hugo-cms-panel');
+    if (panel) {
+        panel.classList.toggle('open');
+    }
+}
+
 // Loading state management
 function setButtonLoading(buttonElement, isLoading, originalText) {
     if (isLoading) {
@@ -22,7 +30,7 @@ function setButtonLoading(buttonElement, isLoading, originalText) {
 }
 
 function setAllButtonsLoading(isLoading) {
-    const buttons = document.querySelectorAll('.hugo-cms-admin button');
+    const buttons = document.querySelectorAll('.hugo-cms-actions button');
     buttons.forEach(button => {
         button.disabled = isLoading;
         if (isLoading) {

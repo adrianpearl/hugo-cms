@@ -1,10 +1,21 @@
-<div class="hugo-cms-admin">
-    <div>Hugo CMS</div>
-    {% if source_file %}
-    <button onclick="editCurrentPage()" title="Edit this page">✏️ Edit</button>
-    {% endif %}
-    <button onclick="createNewPage()" title="Create new page">➕ New</button>
-    <button onclick="rebuildSite()" title="Rebuild site">🔄 Build</button>
-    <button onclick="publishChanges()" title="Publish to Git repository">🚀 Publish</button>
-    <button onclick="clearCache()" title="Clear repository cache and re-clone">🗑️ Clear Cache</button>
+<div class="hugo-cms-admin" id="hugo-cms-admin">
+    <div class="hugo-cms-tab" onclick="toggleAdminPanel()" title="Hugo CMS Admin">
+        <span class="hugo-cms-logo">✎</span>
+        <span class="hugo-cms-label">CMS</span>
+    </div>
+    <div class="hugo-cms-panel" id="hugo-cms-panel">
+        <div class="hugo-cms-header">
+            <span class="hugo-cms-title">Hugo CMS</span>
+            <button class="hugo-cms-close-btn" onclick="toggleAdminPanel()" title="Close">×</button>
+        </div>
+        <div class="hugo-cms-actions">
+            {% if source_file %}
+            <button onclick="editCurrentPage()" title="Edit this page">✏️ Edit Page</button>
+            {% endif %}
+            <button onclick="createNewPage()" title="Create new page">➕ New Page</button>
+            <button onclick="rebuildSite()" title="Rebuild site">🔄 Build Site</button>
+            <button onclick="publishChanges()" title="Publish to Git repository">🚀 Publish</button>
+            <button onclick="clearCache()" title="Clear repository cache and re-clone">🗑️ Clear Cache</button>
+        </div>
+    </div>
 </div>

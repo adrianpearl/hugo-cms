@@ -1,28 +1,143 @@
 .hugo-cms-admin {
     position: fixed;
-    top: 10px;
-    right: 10px;
+    top: 50%;
+    right: 0;
     z-index: 9999;
-    background: rgba(0, 0, 0, 0.8);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    transform: translateY(-50%);
+    transition: all 0.3s ease;
+}
+
+.hugo-cms-tab {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    padding: 10px;
-    border-radius: 5px;
-    font-family: Arial, sans-serif;
+    padding: 12px 8px;
+    border-radius: 8px 0 0 8px;
+    cursor: pointer;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    min-height: 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 40px;
+}
+
+.hugo-cms-tab:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.25);
+    transform: translateY(-50%) translateX(-2px);
+}
+
+.hugo-cms-logo {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.hugo-cms-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.hugo-cms-panel {
+    position: absolute;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%) translateX(100%);
+    background: white;
+    border-radius: 8px;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    min-width: 260px;
+    max-width: 300px;
+    overflow: hidden;
+}
+
+.hugo-cms-panel.open {
+    transform: translateY(-50%) translateX(-8px);
+    opacity: 1;
+    visibility: visible;
+}
+
+.hugo-cms-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 8px 8px 0 0;
+}
+
+.hugo-cms-title {
+    font-weight: 600;
     font-size: 14px;
 }
 
-.hugo-cms-admin button {
-    background: #007cba;
-    color: white;
+.hugo-cms-close-btn {
+    background: none;
     border: none;
-    padding: 8px 12px;
-    margin: 2px;
-    border-radius: 3px;
+    color: white;
+    font-size: 18px;
     cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s ease;
 }
 
-.hugo-cms-admin button:hover {
-    background: #005a87;
+.hugo-cms-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.hugo-cms-actions {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hugo-cms-actions button {
+    background: #f8f9fa;
+    color: #495057;
+    border: 1px solid #dee2e6;
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hugo-cms-actions button:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hugo-cms-actions button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .hugo-cms-modal {
@@ -89,7 +204,10 @@
     100% { transform: rotate(360deg); }
 }
 
-.hugo-cms-admin button:disabled {
-    background: #ccc;
+.hugo-cms-actions button:disabled {
+    background: #dee2e6;
+    color: #6c757d;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
