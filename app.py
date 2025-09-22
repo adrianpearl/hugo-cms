@@ -10,7 +10,7 @@ import subprocess
 import shutil
 import tempfile
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, Response, session
 from jinja2 import Template
 import yaml
 import frontmatter
@@ -92,9 +92,21 @@ config = {
     'git_token': os.getenv('HUGO_GIT_TOKEN'),
     'working_dir': os.getenv('HUGO_WORKING_DIR', '/tmp/hugo-cms-work'),
     # File path validation pattern (regex)
-    'file_path_pattern_regex': os.getenv('HUGO_FILE_PATH_REGEX', ''),
-    'file_path_pattern_regex_hint': os.getenv('HUGO_FILE_PATH_REGEX_HINT', '')
+    'file_path_pattern': os.getenv('HUGO_FILE_PATH_PATTERN', ''),
+    'file_path_pattern_hint': os.getenv('HUGO_FILE_PATH_PATTERN_HINT', ''),
+    # Password protection
+    'site_password': os.getenv('HUGO_SITE_PASSWORD', ''),
+    'flask_secret_key': os.getenv('FLASK_SECRET_KEY', '')
 }
+
+# Configure Flask session handling
+if config.get('flask_secret_key'):
+    app.secret_key = config['flask_secret_key']
+else:
+    # Generate a random secret key if none provided (not recommended for production)
+    import secrets
+    app.secret_key = secrets.token_hex(16)
+    print("Warning: No FLASK_SECRET_KEY provided, using randomly generated key")
 
 class HugoRebuildHandler(FileSystemEventHandler):
     """File system event handler to rebuild Hugo site when content changes"""
@@ -517,9 +529,38 @@ def get_content_type(file_path):
     
     return content_types.get(extension, 'application/octet-stream')
 
+def is_password_required():
+    """Check if password protection is enabled"""
+    return bool(config.get('site_password'))
+
+def check_password(password):
+    """Check if provided password matches configured password"""
+    if not is_password_required():
+        return True
+    return password == config.get('site_password')
+
+def is_authenticated():
+    """Check if current user is authenticated"""
+    if not is_password_required():
+        return True
+    return session.get('authenticated', False)
+
+def require_auth(f):
+    """Decorator to require authentication for routes"""
+    from functools import wraps
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_authenticated():
+            # Store the original URL to redirect back after login
+            session['next_url'] = request.url
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 def validate_file_path(file_path):
     """Validate file path against configured pattern"""
-    pattern = config.get('file_path_pattern_regex', '')
+    pattern = config.get('file_path_pattern', '')
     if not pattern:
         return True, ''  # No pattern configured, allow all paths
     
@@ -568,7 +609,10 @@ def inject_admin_controls(html_content, source_file=None):
             admin_controls_template = Template(f.read())
         
         # Render the admin controls with context
-        admin_controls = admin_controls_template.render(source_file=source_file)
+        admin_controls = admin_controls_template.render(
+            source_file=source_file,
+            password_required=is_password_required()
+        )
         
         # Create CSS link tag
         admin_css = '<link rel="stylesheet" href="/admin/static/css/admin.css">'
@@ -600,7 +644,40 @@ window.hugoCmsConfig = {{
     
     return html_content
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if not is_password_required():
+        # If password not required, redirect to index
+        return redirect(url_for('index'))
+    
+    error = None
+    next_url = request.args.get('next') or session.pop('next_url', None)
+    
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        next_url = request.form.get('next') or next_url
+        if check_password(password):
+            session['authenticated'] = True
+            # Security log
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+            security_logger.info(f"SUCCESSFUL_LOGIN from IP: {client_ip}")
+            return redirect(next_url or url_for('index'))
+        else:
+            error = 'Invalid password'
+    
+    # Render login template
+    template_path = os.path.join('static', 'templates', 'login.html')
+    with open(template_path, 'r', encoding='utf-8') as f:
+        tmpl = Template(f.read())
+    return tmpl.render(error=error, next=next_url)
+
+@app.route('/logout')
+def logout():
+    session.pop('authenticated', None)
+    return redirect(url_for('index'))
+
 @app.route('/')
+@require_auth
 def index():
     """Serve Hugo site index with admin controls"""
     if not config.get('git_repo_url') or not config.get('hugo_repo_path'):
@@ -872,12 +949,14 @@ def setup():
 
 # API Routes for admin functionality
 @app.route('/admin/api/build')
+@require_auth
 def api_build():
     """API endpoint to build Hugo site"""
     success, message = build_hugo_site()
     return jsonify({'success': success, 'message': message})
 
 @app.route('/admin/api/publish', methods=['POST'])
+@require_auth
 def api_publish():
     """API endpoint to publish changes to Git repository"""
     # First, pull any remote changes to avoid conflicts
@@ -890,6 +969,7 @@ def api_publish():
     return jsonify({'success': success, 'message': message})
 
 @app.route('/admin/api/clear-cache', methods=['POST'])
+@require_auth
 def api_clear_cache():
     """API endpoint to clear the repository cache and re-clone"""
     try:
@@ -917,6 +997,7 @@ def api_clear_cache():
         return jsonify({'success': False, 'message': f'Cache clear error: {str(e)}'})
 
 @app.route('/admin/api/get-content/<path:file_path>')
+@require_auth
 def api_get_content(file_path):
     """API endpoint to get markdown file content"""
     full_path = os.path.join(config['hugo_repo_path'], 'content', file_path)
@@ -937,6 +1018,7 @@ def api_get_content(file_path):
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/api/save/<path:file_path>', methods=['POST'])
+@require_auth
 def api_save_file(file_path):
     """API endpoint to save changes to a markdown file"""
     full_path = os.path.join(config['hugo_repo_path'], 'content', file_path)
@@ -969,6 +1051,7 @@ def api_save_file(file_path):
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/admin/api/create', methods=['POST'])
+@require_auth
 def api_create_file():
     """API endpoint to create a new markdown file"""
     try:
@@ -1044,6 +1127,7 @@ def admin_js(filename):
 
 # Catch-all route to serve Hugo pages
 @app.route('/<path:path>')
+@require_auth
 def serve_hugo_content(path):
     """Serve any Hugo page with admin controls injected"""
     return serve_hugo_page('/' + path)

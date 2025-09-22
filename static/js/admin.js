@@ -269,8 +269,15 @@ function rebuildSite() {
     setAllButtonsLoading(true);
     
     fetch('/admin/api/build')
-        .then(response => response.json())
+        .then(response => {
+            if (response.status === 401) {
+                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            }
+            return response.json();
+        })
         .then(data => {
+            if (!data) return; // Skip if redirected
             // Reset loading state
             setButtonLoading(buildButton, false, originalText);
             setAllButtonsLoading(false);
@@ -303,8 +310,15 @@ function publishChanges() {
     fetch('/admin/api/publish', {
         method: 'POST'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+            return;
+        }
+        return response.json();
+    })
     .then(data => {
+        if (!data) return; // Skip if redirected
         // Reset loading state
         setButtonLoading(publishButton, false, originalText);
         setAllButtonsLoading(false);
@@ -334,8 +348,15 @@ function clearCache() {
     fetch('/admin/api/clear-cache', {
         method: 'POST'
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+            return;
+        }
+        return response.json();
+    })
     .then(data => {
+        if (!data) return; // Skip if redirected
         // Reset loading state
         setButtonLoading(clearButton, false, originalText);
         setAllButtonsLoading(false);
